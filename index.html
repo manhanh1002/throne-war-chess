@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Throne War Chess</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2c3e50">
+    <link rel="apple-touch-icon" href="throne-svgrepo-com.png">
+    <script>
+        (function(){
+            const isLocal = ['localhost','127.0.0.1'].includes(location.hostname) || location.hostname.endsWith('.local');
+            if (isLocal) return;
+            const s = document.createElement('script');
+            s.async = true;
+            s.src = 'https://www.googletagmanager.com/gtag/js?id=G-1VB6KVF620';
+            document.head.appendChild(s);
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);} 
+            window.gtag = gtag;
+            gtag('js', new Date());
+            gtag('config', 'G-1VB6KVF620');
+        })();
+    </script>
+    <script>
+        (function(){
+            try {
+                const u = new URL(location.href);
+                if (u.searchParams.get('nocache') === '1') {
+                    (async () => {
+                        try {
+                            const keys = await caches.keys();
+                            await Promise.all(keys.map(k => caches.delete(k)));
+                            if ('serviceWorker' in navigator) {
+                                const regs = await navigator.serviceWorker.getRegistrations();
+                                await Promise.all(regs.map(r => r.unregister()));
+                            }
+                        } catch (e) {}
+                        u.searchParams.delete('nocache');
+                        location.replace(u.origin + u.pathname);
+                    })();
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(15, 23, 42, 0.7);
+            --panel-border: #1f2a3d;
+            --primary: #f59e0b;
+            --primary-dark: #c58108;
+            --muted: #8aa0b2;
+            --board-dark: #8b5a2b;
+            --board-light: #eecfa1;
+            --palace-color: #d6b48e;
+            --throne-color: #4e2017;
+            --highlight: rgba(100, 255, 100, 0.6);
+            --capture: rgba(255, 80, 80, 0.6);
+            --selected: #ffe066;
+            --last-move: rgba(137, 129, 101, 0.5);
+            --text-color: #e6edf3;
+            --cell: clamp(36px, calc((100vw - 56px) / 9), 50px);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            user-select: none;
+            color: var(--text-color);
+        }
+
+        h1 { margin: 0; letter-spacing: 1px; font-size: 1.4rem; }
+        #app-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 5%; background: #081726; border-bottom: 1px solid var(--panel-border); position: sticky; top: 0; z-index: 10; }
+        .brand { display: flex; align-items: center; gap: 10px; }
+        .brand img { width: 28px; height: 28px; }
+
+        #top-bar { display: flex; gap: 8px; align-items: center; }
+
+        #controls { display: flex; gap: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); padding: 10px 5%; border-radius: 12px; align-items: center; backdrop-filter: blur(6px); }
+        
+        select, button { padding: 10px 14px; border: 1px solid var(--panel-border); border-radius: 10px; font-size: 14px; cursor: pointer; transition: all 0.2s; background: #0f2133; color: var(--text-color); }
+        button { background: var(--primary); color: #0a0a0a; border: none; font-weight: 800; border-bottom: 4px solid var(--primary-dark); box-shadow: 0 6px 16px rgba(0,0,0,0.35); }
+        button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+        button:active { transform: translateY(1px); border-bottom-width: 2px; }
+        button.secondary { background: #25384f; color: var(--text-color); border-bottom: 4px solid #1a2a3a; }
+        button.info-btn { background: #274c77; color: #fff; border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+
+        #start-overlay { position: absolute; inset: 12px; display: grid; place-items: center; }
+        #start-overlay.hidden { display: none; }
+        #btn-start { background: var(--primary); color: #0a0a0a; border: none; font-weight: 800; border-bottom: 4px solid var(--primary-dark); box-shadow: 0 6px 16px rgba(0,0,0,0.35); padding: 12px 20px; border-radius: 12px; }
+
+        /* Status */
+        #status-bar { display: flex; gap: 12px; font-weight: bold; }
+        .status-pill { padding: 10px 16px; border-radius: 10px; color: #fff; min-width: 160px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: background 0.3s; font-size: 1rem; background: #274c77; border: 1px solid var(--panel-border); }
+        .status-pill.White { background: #1e6091; }
+        .status-pill.Black { background: #8b1e3f; }
+        .status-pill.thinking { background: #b78103; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        /* Game Layout */
+        .game-layout { display: grid; grid-template-columns: minmax(280px, 1fr) 380px; gap: 24px; align-items: start; padding-top: 2%; padding-left: 5%; padding-right: 5%;}
+        @media (max-width: 900px) { .game-layout { grid-template-columns: 1fr;padding-left: 3%; padding-right: 3%; } }
+
+        #board-area { display: flex; flex-direction: column; gap: 12px; }
+        .player-panel { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); padding: 12px 14px; border-radius: 12px; backdrop-filter: blur(6px); }
+        .avatar { width: 36px; height: 36px; border-radius: 999px; display: grid; place-items: center; background: #1f2a3d; color: #fff; font-weight: 800; }
+        .player-name { font-weight: 800; }
+        .timer { font-weight: 700; color: var(--primary); }
+        .turn-indicator { font-size: 12px; color: var(--primary); }
+        .turn-indicator.blink { animation: blink 0.9s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
+        #board-wrapper { margin-left: 22.2%;margin-right: 22.2%;padding: 12px; background: #23313f; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); max-width: 100%; border: 1px solid var(--panel-border); position: relative; }
+        @media (max-width: 900px) {
+            #board-wrapper { margin-left: 0;margin-right: 0; }
+        }
+        #board {
+            display: grid;
+            grid-template-columns: repeat(9, var(--cell));
+            grid-template-rows: repeat(11, var(--cell));
+            border: 3px solid #3e2723;
+            position: relative;
+        }
+        .square {
+            width: var(--cell); height: var(--cell); display: flex; justify-content: center; align-items: center;
+            font-size: calc(var(--cell) * 0.8); cursor: pointer; position: relative;
+            line-height: var(--cell);
+        }
+        .square.light { background-color: var(--board-light); }
+        .square.dark { background-color: var(--board-dark); }
+        .square.palace { background-color: var(--palace-color); }
+        .square.palace-ring {
+            background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.08) 0 6px, rgba(0,0,0,0) 6px 12px);
+        }
+        .square.throne {
+            background-color: var(--throne-color);
+        }
+        .square.throne::before {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            background-image: url('throne-svgrepo-com.png');
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 90% 90%;
+            z-index: 0;
+        }
+        .square.throne.has-piece::before { opacity: 0; }
+        .square.throne::after {
+            content: ''; position: absolute; width: 6px; height: 6px; background: gold; border-radius: 50%; top: 3px; right: 3px;
+        }
+        .square.selected { background-color: var(--selected) !important; }
+        .square.last-move { background-color: var(--last-move) !important; }
+        .square.hint::before {
+            content: ''; width: 14px; height: 14px; background: var(--highlight); border-radius: 50%;
+            position: absolute;
+        }
+        .square.capture-hint { background-color: var(--capture) !important; }
+
+        #board::before {
+            content: '';
+            position: absolute;
+            left: calc(var(--cell) * 3);
+            top: calc(var(--cell) * 4);
+            width: calc(var(--cell) * 3);
+            height: calc(var(--cell) * 3);
+            border: 4px solid #3e2723;
+            pointer-events: none;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+            z-index: 0;
+        }
+
+        .piece {
+            cursor: grab; z-index: 5;
+            font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+            font-weight: normal;
+            filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.4));
+            transition: transform 0.1s;
+            line-height: 1;
+            width: calc(var(--cell) * 0.84);
+            height: calc(var(--cell) * 0.84);
+            object-fit: contain;
+        }
+        .piece:hover { transform: scale(1.1); }
+        .piece.White { color: #104e8b; text-shadow: 1px 1px 0 #fff; }
+        .piece.Black { color: #8b0000; text-shadow: 1px 1px 0 #fff; }
+
+        /* Sidebar */
+        #sidebar { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
+        .tabs { display: flex; gap: 8px; }
+        .tab-btn { flex: 1; text-align: center; background: #1e293b; color: #cbd5e1; border: 1px solid var(--panel-border); border-radius: 10px; padding: 10px; font-weight: 700; }
+        .tab-btn.active { background: var(--primary); color: #0a0a0a; border-color: var(--primary-dark); }
+        .tab-panel { display: none; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 12px; backdrop-filter: blur(6px); }
+        .tab-panel.active { display: block; }
+        .info-box { background: transparent; padding: 0; border-radius: 0; font-size: 0.95rem; line-height: 1.6; }
+        #move-history { background: #0f2133; height: 320px; overflow-y: auto; padding: 10px; border: 1px solid var(--panel-border); border-radius: 10px; font-family: monospace; font-size: 13px; }
+        .log-entry { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; display: flex; justify-content: space-between; }
+        .log-entry.ai { color: #5aa9e6; font-weight: bold; }
+        .log-entry.player { color: #ff6b6b; }
+
+        /* Modal */
+        #modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 1000; display: none;
+            justify-content: center; align-items: center;
+        }
+        #modal-content {
+            background: #c58108; width: 600px; max-width: 90%; max-height: 85vh;
+            border-radius: 10px; padding: 30px; overflow-y: auto;
+            position: relative; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        #modal-close {
+            position: absolute; top: 15px; right: 20px; font-size: 24px; cursor: pointer; color: #666;
+        }
+        #modal-close:hover { color: #000; }
+        .rule-section h3 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 20px; }
+        .rule-item { margin-bottom: 10px; display: flex; gap: 10px; align-items: flex-start; }
+        .rule-icon { font-size: 24px; width: 30px; text-align: center; }
+
+        #story-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 1000; display: none;
+            justify-content: center; align-items: center;
+        }
+        #story-content {
+            background: #c58108; width: 700px; max-width: 92%; max-height: 85vh;
+            border-radius: 10px; padding: 30px; overflow-y: auto;
+            position: relative; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            line-height: 1.6; font-size: 0.95rem;
+        }
+        #story-close { position: absolute; top: 15px; right: 20px; font-size: 24px; cursor: pointer; color: #666; }
+        #story-close:hover { color: #000; }
+
+        /* Notification */
+        #notification {
+            position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+            background: #c54908; color: white; padding: 15px 40px; border-radius: 30px;
+            font-size: 1.2rem; font-weight: bold; opacity: 0; pointer-events: none; 
+            transition: opacity 0.3s; z-index: 2000; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        #notification.show { opacity: 1; }
+
+        footer { margin: 12px 0 20px; color: var(--muted); font-size: 12px; text-align: center; }
+        #footer-text { opacity: 0.85; }
+
+        /* Coords */
+        .coord { position: absolute; font-size: calc(var(--cell) * 0.2); color: #eecfa1; opacity: 0.8; font-weight: bold; pointer-events: none; }
+        .r-lbl { left: calc(var(--cell) * -0.3); top: 0; width: calc(var(--cell) * 0.25); text-align: right; }
+        .c-lbl { bottom: calc(var(--cell) * -0.6); left: 0; width: var(--cell); text-align: center; }
+
+        /* Language toggle */
+        .lang-btn { background: transparent; color: var(--muted); border: 1px solid var(--panel-border); }
+        .lang-btn.active { background: #25384f; color: white; border-color: var(--panel-border); }
+    
+    </style>
+</head>
+<body>
+
+    <div id="app-header">
+        <div class="brand">
+            <img src="throne-svgrepo-com.png" alt="logo">
+            <h1 id="game-title">Throne War Chess</h1>
+        </div>
+        <div id="top-bar">
+            <button id="btn-story" class="secondary" onclick="openStory()" style="display:none">Story</button>
+            <button id="btn-guide" class="info-btn" onclick="openModal()">How to Play</button>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button onclick="startGame()" id="btn-newgame">New Game</button>
+        <button class="secondary" onclick="uiUndo()" id="btn-undo">Undo</button>
+        <div id="status-bar">
+        <div id="turn-pill" class="status-pill White">...</div>
+        </div>
+    </div>
+
+ 
+
+    <div class="game-layout">
+        <div id="board-area">
+            <div class="player-panel" id="White-panel">
+                <div class="avatar">AI</div>
+                <div>
+                    <div class="player-name" id="White-label">White</div>
+                    <div class="turn-indicator" id="White-turn"></div>
+                </div>
+                <span class="timer" id="White-timer">00:00</span>
+            </div>
+            <div id="board-wrapper">
+                <div id="board"></div>
+                <div id="start-overlay" class="hidden"><button id="btn-start" onclick="startMatch()">Start</button></div>
+            </div>
+            <div class="player-panel" id="Black-panel">
+                <div class="avatar">👤</div>
+                <div>
+                    <div class="player-name" id="Black-label">Black</div>
+                    <div class="turn-indicator" id="Black-turn"></div>
+                </div>
+                <span class="timer" id="Black-timer">00:00</span>
+            </div>
+        </div>
+
+        <div id="sidebar">
+            <div class="tabs">
+                <button class="tab-btn active" id="tab-btn-history" onclick="showTab('history')"></button>
+                <button class="tab-btn" id="tab-btn-settings" onclick="showTab('settings')"></button>
+            </div>
+            <div class="tab-panel active" id="tab-history">
+                <div id="move-history"></div>
+            </div>
+            <div class="tab-panel" id="tab-settings">
+                <div class="info-box" id="game-goal"></div>
+                 <h4 id="choose-mode">Choose Game Mode</h4>
+                <div id="controls">
+        <select id="mode-select" onchange="updateModeLabel()">
+            <option value="pvc">Player vs AI (AI White)</option>
+            <option value="pvp">Player vs Player</option>
+        </select>
+        <select id="difficulty-select">
+            <option value="1">Very Easy</option>
+            <option value="2" selected>Easy</option>
+            <option value="3">Medium</option>
+            <option value="4">Hard</option>
+            <option value="5">Very Hard</option>
+        </select>
+    </div>
+        <h4 id="choose-color">Choose Color</h4>
+        <select id="color-select">
+            <option value="white">White</option>
+            <option value="black" selected>Black</option>
+        </select>
+        <div id="time-limit-settings">
+            <h4 id="time-limit-title"></h4>
+            <label><input type="checkbox" id="time-limit-toggle"> <span id="time-limit-enable"></span></label>
+            <div>
+                <label for="time-limit-minutes" id="time-limit-label"></label>
+                <input type="number" id="time-limit-minutes" min="1" max="180" value="5">
+            </div>
+        </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification"></div>
+
+    <footer><div id="footer-text"></div></footer>
+
+    <!-- Instructions Modal -->
+    <div id="modal-overlay" onclick="if(event.target === this) closeModal()">
+        <div id="modal-content">
+            <span id="modal-close" onclick="closeModal()">&times;</span>
+            <h2 id="modal-title">Rules & Pieces</h2>
+            <div id="modal-body">
+                <!-- Content populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <div id="story-overlay" onclick="if(event.target === this) closeStory()">
+        <div id="story-content">
+            <span id="story-close" onclick="closeStory()">&times;</span>
+            <h2 id="story-title"></h2>
+            <div id="story-body"></div>
+        </div>
+    </div>
+
+<script>
+    // --- TEXT DATA (English only) ---
+    const LANG = {
+        chooseMode: "Choose Game Mode",
+        chooseColor: "Choose Color",
+        title: "Throne War Chess",
+        newGame: "New Game",
+        undo: "Undo",
+        storyBtn: "Story",
+        tabHistory: "History",
+        tabSettings: "Settings",
+        yourTurn: "Your Turn",
+        pressStart: "Press Start",
+        modePvC: "Player vs AI (AI White)",
+        modePvP: "Player vs Player",
+        diffVeryEasy: "Very Easy",
+        diffEasy: "Easy",
+        diffMed: "Medium",
+        diffHard: "Hard",
+        diffVeryHard: "Very Hard",
+        turnWhiteAI: "White's Turn (AI)",
+        turnWhiteYou: "White's Turn (You)",
+        turnBlackAI: "Black's Turn (AI)",
+        turnBlackYou: "Black's Turn (You)",
+        turnWhitePvP: "White's Turn",
+        turnBlackPvP: "Black's Turn",
+        aiThinking: "AI is thinking...",
+        check: "Check!",
+        win: "WINS (Throne Captured)!",
+        draw: "Draw - Stalemate",
+        timeLimitTitle: "Time Limit Mode",
+        timeLimitEnable: "Enable",
+        timeLimitLabel: "Per Player Time (minutes)",
+        winsOnTime: "WINS on time!",
+        goalTitle: "Goal:",
+        goalText: "Move Prince (♚/♔) to the <strong>Throne (E6)</strong> safely.",
+        goalSide: "Sides: <strong>White (Top)</strong> vs <strong>Black (Bottom)</strong>.",
+        goalAI: "White goes first.",
+        modalTitle: "Rules & Pieces",
+        rulesFull: `
+            <div class="rule-section">
+                <h3>Objective</h3>
+                <p>Move the <strong>Prince</strong> to the <strong>Throne E6</strong> safely to win.</p>
+            </div>
+            <div class="rule-section">
+                <h3>Board & Palace</h3>
+                <ul>
+                    <li>The board is <strong>9×11</strong>.</li>
+                    <li>The <strong>Palace</strong> is the <strong>3×3</strong> central area around E6.</li>
+                    <li>The <strong>Throne (E6)</strong> sits at the center.</li>
+                </ul>
+            </div>
+            <div class="rule-section">
+                <h3>Turn</h3>
+                <ul>
+                    <li><strong>White</strong> moves first. In Player vs AI, AI is White.</li>
+                    <li>On your turn, pick a piece of your color and move legally.</li>
+                </ul>
+            </div>
+            <div class="rule-section">
+                <h3>Movement & Capture</h3>
+                <ul>
+                    <li><strong>Prince </strong>: <strong>1 step diagonal</strong>, or up to <strong>2 steps orthogonal</strong> in a line if not blocked. May capture on step 1 or step 2 depending on the target.</li>
+                    <li><strong>Guardian </strong>: slides <strong>orthogonally</strong> any distance until blocked; captures on the destination.</li>
+                    <li><strong>Knight </strong>: slides <strong>diagonally</strong> any distance until blocked; captures on the destination.</li>
+                    <li><strong>Archer </strong>: pick any direction.
+                        <ul>
+                            <li><em>Move</em>: must <strong>jump over exactly 1 friendly</strong>; then may land on the next empty square.</li>
+                            <li><em>Capture</em>: must <strong>jump over exactly 1 enemy</strong> and <strong>capture the first piece immediately after</strong>.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Pawn </strong>: moves <strong>diagonally forward 1</strong>; <strong>inside the Palace</strong> may also move <strong>diagonally backward 1</strong>.</li>
+                </ul>
+            </div>
+            <div class="rule-section">
+                <h3>Palace & Throne Rules</h3>
+                <ul>
+                    <li>Only the <strong>Prince</strong> may <strong>remain on E6</strong>.</li>
+                    <li>Any other piece that enters E6 must <strong>leave that square on its next turn</strong>.</li>
+                </ul>
+            </div>
+        `,
+        storyTitle: "Game Story: Throne War",
+        storyText: `
+            <p>In 1005, at Hoa Lư, King Lê Đại Hành died, leaving the throne vacant and the court in turmoil.</p>
+            <p>The will named Crown Prince Lê Long Việt as successor, but the ambitions of other princes ignited a bloody civil war.</p>
+            <p>Lê Long Việt was enthroned as Lê Trung Tông. Loyalists fortified the <strong>Palace</strong> – the 3×3 zone around <strong>Throne E6</strong> – deploying cavalry, elite guards, archers, and soldiers to defend.</p>
+            <p>Lê Long Đĩnh, allied with Lê Long Tích and Lê Kính, led the rebellion, dismissing the will and launching months of warfare.</p>
+            <p>Both sides struck, surrounded, bombarded, and surged to seize the <strong>Throne</strong>; blood was spilled and the court shattered.</p>
+            <p>You play as either faction: defend the rightful heir or overthrow the throne. On the 9×11 board, each move echoes the tragedy of history.</p>
+            <p>Outcome: the side that holds E6 beyond the opponent’s response wins. History records Lê Long Việt’s assassination after three days; Lê Long Đĩnh claimed the throne, and the dynasty soon crumbled.</p>
+            <p>Play Throne War: witness—and perhaps decide—the fate of that era.</p>
+        `,
+        footer: "Game Designed and copyrighted by Andrew H.",
+        colorSelect: "Choose your color",
+        colorWhite: "White",
+        colorBlack: "Black"
+    };
+
+    
+
+    // --- GAME CONSTANTS ---
+    const COLS = 9;
+    const ROWS = 11;
+    const PALACE_ROWS = [4, 5, 6];
+    const PALACE_COLS = [3, 4, 5];
+    const THRONE = { r: 5, c: 4 };
+
+    const PIECES = { PRINCE: 1, GUARDIAN: 2, KNIGHT: 3, ARCHER: 4, PAWN: 5 };
+    const COLORS = { White: 'White', Black: 'Black' };
+    
+    // Values & PST for AI (White = Max)
+    const VAL = { 
+        [PIECES.PRINCE]: 20000, 
+        [PIECES.GUARDIAN]: 500, 
+        [PIECES.ARCHER]: 350, 
+        [PIECES.KNIGHT]: 320, 
+        [PIECES.PAWN]: 100 
+    };
+
+    // Game State
+    let board = [];
+    let turn = COLORS.White;
+    let gameOver = false;
+    let history = [];
+    let gameMode = 'pvc';
+    let difficulty = 2;
+    let selectedSq = null;
+    let legalMoves = [];
+    let lastMove = null;
+    let isAIThinking = false;
+    let playerColor = COLORS.Black;
+    let aiColor = COLORS.White;
+    let matchStarted = false;
+    let searchDeadline = 0;
+
+    // UI Elements
+    const boardEl = document.getElementById('board');
+    const notifEl = document.getElementById('notification');
+    const historyEl = document.getElementById('move-history');
+    const turnPill = document.getElementById('turn-pill');
+    const titleEl = document.getElementById('game-title');
+    const btnNew = document.getElementById('btn-newgame');
+    const btnUndo = document.getElementById('btn-undo');
+    const selMode = document.getElementById('mode-select');
+    const selDiff = document.getElementById('difficulty-select');
+    const selColor = document.getElementById('color-select');
+    const goalBox = document.getElementById('game-goal');
+    const modalTitle = document.getElementById('modal-title');
+    const chooseMode = document.getElementById('choose-mode');
+    const chooseColor = document.getElementById('choose-color');
+    const modalBody = document.getElementById('modal-body');
+    const footerText = document.getElementById('footer-text');
+    const storyTitle = document.getElementById('story-title');
+    const storyBody = document.getElementById('story-body');
+    const btnStory = document.getElementById('btn-story');
+    const WhiteLabel = document.getElementById('White-label');
+    const BlackLabel = document.getElementById('Black-label');
+    const WhiteTimerEl = document.getElementById('White-timer');
+    const BlackTimerEl = document.getElementById('Black-timer');
+    const BlackTurnEl = document.getElementById('Black-turn');
+    const WhiteTurnEl = document.getElementById('White-turn');
+    const tabBtnHistory = document.getElementById('tab-btn-history');
+    const tabBtnSettings = document.getElementById('tab-btn-settings');
+    const tabHistory = document.getElementById('tab-history');
+    const tabSettings = document.getElementById('tab-settings');
+    const startOverlay = document.getElementById('start-overlay');
+    const timeLimitTitle = document.getElementById('time-limit-title');
+    const timeLimitEnableEl = document.getElementById('time-limit-enable');
+    const timeLimitToggle = document.getElementById('time-limit-toggle');
+    const timeLimitLabelEl = document.getElementById('time-limit-label');
+    const timeLimitMinutes = document.getElementById('time-limit-minutes');
+
+    // --- UI FUNCTIONS ---
+    
+
+    function updateText() {
+        const t = LANG;
+        titleEl.innerText = t.title;
+        btnNew.innerText = t.newGame;
+        btnUndo.innerText = t.undo;
+        btnStory.innerText = t.storyBtn;
+        tabBtnHistory.innerText = t.tabHistory;
+        tabBtnSettings.innerText = t.tabSettings;
+        
+        // Update Select Options
+        chooseMode.innerText = t.chooseMode;
+        chooseColor.innerText = t.chooseColor;
+        selMode.options[0].text = t.modePvC;
+        selMode.options[1].text = t.modePvP;
+        if (selDiff.options.length >= 5) {
+            selDiff.options[0].text = t.diffVeryEasy;
+            selDiff.options[1].text = t.diffEasy;
+            selDiff.options[2].text = t.diffMed;
+            selDiff.options[3].text = t.diffHard;
+            selDiff.options[4].text = t.diffVeryHard;
+        }
+
+        // Info Box
+        goalBox.innerHTML = `
+            <strong>${t.goalTitle}</strong> ${t.goalText}<br>
+            ${t.goalSide}<br>
+            <em>${t.goalAI}</em>
+        `;
+
+        modalTitle.innerText = t.modalTitle;
+        modalBody.innerHTML = t.rulesFull;
+
+        storyTitle.innerText = t.storyTitle;
+        storyBody.innerHTML = t.storyText;
+
+        if (timeLimitTitle) timeLimitTitle.innerText = t.timeLimitTitle;
+        if (timeLimitEnableEl) timeLimitEnableEl.innerText = t.timeLimitEnable;
+        if (timeLimitLabelEl) timeLimitLabelEl.innerText = t.timeLimitLabel;
+
+        updateStatusPill();
+        footerText.innerText = t.footer;
+
+        if (selColor) {
+            selColor.options[0].text = t.colorWhite;
+            selColor.options[1].text = t.colorBlack;
+        }
+        if (gameMode === 'pvc') {
+            if (playerColor === COLORS.White) {
+                WhiteLabel.innerText = 'White (You)';
+                BlackLabel.innerText = 'Black (Opponent)';
+            } else {
+                WhiteLabel.innerText = 'White (Opponent)';
+                BlackLabel.innerText = 'Black (You)';
+            }
+        } else {
+            WhiteLabel.innerText = 'White Side';
+            BlackLabel.innerText = 'Black Side';
+        }
+    }
+
+    function openModal() { document.getElementById('modal-overlay').style.display = 'flex'; }
+    function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+    function openStory() { document.getElementById('story-overlay').style.display = 'flex'; }
+    function closeStory() { document.getElementById('story-overlay').style.display = 'none'; }
+
+    function updateStatusPill() {
+        if (isAIThinking) {
+            turnPill.className = 'status-pill thinking';
+            turnPill.innerText = LANG.aiThinking;
+            if (timeLimitEnabled) { startTurnTimer(); }
+            return;
+        }
+        if (!matchStarted) {
+            turnPill.className = 'status-pill';
+            turnPill.innerText = LANG.pressStart;
+            stopTimer();
+            return;
+        }
+        turnPill.className = `status-pill ${turn}`;
+        const t = LANG;
+        let label = "";
+        if (gameMode === 'pvc') {
+            const isAI = turn === aiColor;
+            if (turn === COLORS.White) label = isAI ? t.turnWhiteAI : t.turnWhiteYou; else label = isAI ? t.turnBlackAI : t.turnBlackYou;
+        } else {
+            label = (turn === COLORS.White) ? t.turnWhitePvP : t.turnBlackPvP;
+        }
+        turnPill.innerText = label;
+        startTurnTimer();
+        WhiteTurnEl.innerText = '';
+        BlackTurnEl.innerText = '';
+        WhiteTurnEl.classList.remove('blink');
+        BlackTurnEl.classList.remove('blink');
+        if (gameMode === 'pvc') {
+            if (turn === playerColor && !isAIThinking) {
+                if (playerColor === COLORS.White) { WhiteTurnEl.innerText = LANG.yourTurn; WhiteTurnEl.classList.add('blink'); }
+                else { BlackTurnEl.innerText = LANG.yourTurn; BlackTurnEl.classList.add('blink'); }
+            }
+        } else {
+            if (turn === COLORS.White) { WhiteTurnEl.innerText = LANG.yourTurn; WhiteTurnEl.classList.add('blink'); }
+            else { BlackTurnEl.innerText = LANG.yourTurn; BlackTurnEl.classList.add('blink'); }
+        }
+    }
+
+    // --- GAME LOGIC ---
+
+    function startGame() {
+        gameMode = selMode.value;
+        difficulty = parseInt(selDiff.value);
+        playerColor = (selColor && selColor.value === 'white') ? COLORS.White : COLORS.Black;
+        aiColor = playerColor === COLORS.White ? COLORS.Black : COLORS.White;
+        turn = COLORS.White;
+        gameOver = false;
+        history = [];
+        lastMove = null;
+        selectedSq = null;
+        legalMoves = [];
+        historyEl.innerHTML = '';
+        isAIThinking = false;
+        stopTimer();
+        timeLimitEnabled = !!(timeLimitToggle && timeLimitToggle.checked);
+        const mins = timeLimitMinutes ? parseInt(timeLimitMinutes.value || '0') : 0;
+        timeLimitSeconds = Math.max(0, Math.min(10800, mins * 60));
+        if (timeLimitEnabled) { WhiteTime = timeLimitSeconds; BlackTime = timeLimitSeconds; } else { WhiteTime = 0; BlackTime = 0; }
+        updateTimersUI();
+        matchStarted = false;
+        
+        createBoard();
+        updateStatusPill();
+        notifEl.classList.remove('show');
+        if (startOverlay) startOverlay.classList.remove('hidden');
+        
+        // Wait for Start button to begin match
+    }
+
+    function startMatch() {
+        if (gameOver) return;
+        matchStarted = true;
+        if (startOverlay) startOverlay.classList.add('hidden');
+        updateStatusPill();
+        if (gameMode === 'pvc' && turn === aiColor) { runAI(); }
+    }
+
+    function showTab(name) {
+        if (name === 'history') {
+            tabHistory.classList.add('active');
+            tabSettings.classList.remove('active');
+            tabBtnHistory.classList.add('active');
+            tabBtnSettings.classList.remove('active');
+        } else {
+            tabSettings.classList.add('active');
+            tabHistory.classList.remove('active');
+            tabBtnSettings.classList.add('active');
+            tabBtnHistory.classList.remove('active');
+        }
+    }
+
+    function createBoard() {
+        board = Array(ROWS).fill(null).map(() => Array(COLS).fill(null));
+        const place = (r, c, t, col) => { board[r][c] = { type: t, color: col }; };
+        if (playerColor === COLORS.Black) {
+            place(0, 0, PIECES.GUARDIAN, COLORS.White);   place(0, 8, PIECES.GUARDIAN, COLORS.White);
+            place(0, 2, PIECES.ARCHER, COLORS.White); place(0, 6, PIECES.ARCHER, COLORS.White);
+            place(0, 4, PIECES.PRINCE, COLORS.White);
+            place(1, 1, PIECES.PAWN, COLORS.White);   place(1, 3, PIECES.PAWN, COLORS.White);
+            place(1, 5, PIECES.PAWN, COLORS.White);   place(1, 7, PIECES.PAWN, COLORS.White);
+            place(2, 0, PIECES.PAWN, COLORS.White);   place(2, 8, PIECES.PAWN, COLORS.White);
+            place(2, 2, PIECES.KNIGHT, COLORS.White); place(2, 6, PIECES.KNIGHT, COLORS.White);
+
+            place(10, 0, PIECES.GUARDIAN, COLORS.Black);   place(10, 8, PIECES.GUARDIAN, COLORS.Black);
+            place(10, 2, PIECES.ARCHER, COLORS.Black); place(10, 6, PIECES.ARCHER, COLORS.Black);
+            place(10, 4, PIECES.PRINCE, COLORS.Black);
+            place(9, 1, PIECES.PAWN, COLORS.Black);    place(9, 3, PIECES.PAWN, COLORS.Black);
+            place(9, 5, PIECES.PAWN, COLORS.Black);    place(9, 7, PIECES.PAWN, COLORS.Black);
+            place(8, 0, PIECES.PAWN, COLORS.Black);    place(8, 8, PIECES.PAWN, COLORS.Black);
+            place(8, 2, PIECES.KNIGHT, COLORS.Black);  place(8, 6, PIECES.KNIGHT, COLORS.Black);
+        } else {
+            place(0, 0, PIECES.GUARDIAN, COLORS.Black);   place(0, 8, PIECES.GUARDIAN, COLORS.Black);
+            place(0, 2, PIECES.ARCHER, COLORS.Black); place(0, 6, PIECES.ARCHER, COLORS.Black);
+            place(0, 4, PIECES.PRINCE, COLORS.Black);
+            place(1, 1, PIECES.PAWN, COLORS.Black);   place(1, 3, PIECES.PAWN, COLORS.Black);
+            place(1, 5, PIECES.PAWN, COLORS.Black);   place(1, 7, PIECES.PAWN, COLORS.Black);
+            place(2, 0, PIECES.PAWN, COLORS.Black);   place(2, 8, PIECES.PAWN, COLORS.Black);
+            place(2, 2, PIECES.KNIGHT, COLORS.Black); place(2, 6, PIECES.KNIGHT, COLORS.Black);
+
+            place(10, 0, PIECES.GUARDIAN, COLORS.White);   place(10, 8, PIECES.GUARDIAN, COLORS.White);
+            place(10, 2, PIECES.ARCHER, COLORS.White); place(10, 6, PIECES.ARCHER, COLORS.White);
+            place(10, 4, PIECES.PRINCE, COLORS.White);
+            place(9, 1, PIECES.PAWN, COLORS.White);    place(9, 3, PIECES.PAWN, COLORS.White);
+            place(9, 5, PIECES.PAWN, COLORS.White);    place(9, 7, PIECES.PAWN, COLORS.White);
+            place(8, 0, PIECES.PAWN, COLORS.White);    place(8, 8, PIECES.PAWN, COLORS.White);
+            place(8, 2, PIECES.KNIGHT, COLORS.White);  place(8, 6, PIECES.KNIGHT, COLORS.White);
+        }
+
+        renderBoard();
+    }
+
+    function getSymbol(p) {
+        // VISUAL MAPPING: 
+        // Knight -> Bishop Symbol
+        // Archer -> Archer Symbol
+        const chars = {
+            [PIECES.PRINCE]: { 'White': '♔', 'Black': '♚' },
+            [PIECES.GUARDIAN]: { 'White': '♖', 'Black': '♜' },
+            [PIECES.KNIGHT]: { 'White': '♗', 'Black': '♝' }, // Knight uses Bishop visual
+            [PIECES.ARCHER]: { 'White': '♕', 'Black': '♛' }, // Archer uses Archer visual
+            [PIECES.PAWN]: { 'White': '♙', 'Black': '♟' }
+        };
+        return chars[p.type][p.color];
+    }
+
+    function getPieceSrc(type, color) {
+        const col = color === COLORS.White ? 'w' : 'b';
+        const name = type === PIECES.PRINCE ? 'prince' :
+                     type === PIECES.GUARDIAN ? 'guardian' :
+                     type === PIECES.KNIGHT ? 'knight' :
+                     type === PIECES.ARCHER ? 'archer' : 'pawn';
+        return `chess pieces/${col}-${name}.png`;
+    }
+
+    function renderBoard() {
+        boardEl.innerHTML = '';
+        for(let r=0; r<ROWS; r++) {
+            for(let c=0; c<COLS; c++) {
+                const sq = document.createElement('div');
+                sq.className = `square ${(r+c)%2===0?'light':'dark'}`;
+                
+                if (PALACE_ROWS.includes(r) && PALACE_COLS.includes(c)) {
+                    if (r === THRONE.r && c === THRONE.c) sq.classList.add('throne');
+                    else sq.classList.add('palace-ring');
+                }
+                
+                if (selectedSq && selectedSq.r === r && selectedSq.c === c) sq.classList.add('selected');
+                if (lastMove && ((lastMove.from.r === r && lastMove.from.c === c) || (lastMove.to.r === r && lastMove.to.c === c))) {
+                    sq.classList.add('last-move');
+                }
+
+                const move = legalMoves.find(m => m.to.r === r && m.to.c === c);
+                if (move) {
+                    sq.classList.add(move.capture ? 'capture-hint' : 'hint');
+                    sq.onclick = () => userMove(move);
+                } else {
+                    sq.onclick = () => selectSquare(r, c);
+                }
+
+                // Coords
+                if (c===0) sq.innerHTML += `<div class="coord r-lbl">${r+1}</div>`;
+                if (r===ROWS-1) sq.innerHTML += `<div class="coord c-lbl">${String.fromCharCode(65+c)}</div>`;
+
+                const p = board[r][c];
+                if (p) {
+                    const img = document.createElement('img');
+                    img.className = `piece ${p.color}`;
+                    img.src = getPieceSrc(p.type, p.color);
+                    img.draggable = false;
+                    sq.appendChild(img);
+                    sq.classList.add('has-piece');
+                }
+                boardEl.appendChild(sq);
+            }
+        }
+    }
+
+    // --- MOVEMENT RULES ---
+    function isInsidePalace(r, c) { return r >= 4 && r <= 6 && c >= 3 && c <= 5; }
+
+    function getPseudoMoves(r, c, piece) {
+        const moves = [];
+        const { type, color } = piece;
+        const forward = (color === COLORS.White) ? 1 : -1; 
+
+        const tryAdd = (tr, tc) => {
+            if (tr >= 0 && tr < ROWS && tc >= 0 && tc < COLS) {
+                const target = board[tr][tc];
+                if (!target) moves.push({ from: {r,c}, to: {r:tr, c:tc}, capture: null });
+                else if (target.color !== color) moves.push({ from: {r,c}, to: {r:tr, c:tc}, capture: target });
+            }
+        };
+        const slide = (dirs) => {
+            for (let [dr, dc] of dirs) {
+                let tr = r + dr, tc = c + dc;
+                while (tr >= 0 && tr < ROWS && tc >= 0 && tc < COLS) {
+                    const target = board[tr][tc];
+                    if (!target) { moves.push({ from: {r,c}, to: {r:tr, c:tc}, capture: null }); } 
+                    else {
+                        if (target.color !== color) moves.push({ from: {r,c}, to: {r:tr, c:tc}, capture: target });
+                        break; 
+                    }
+                    tr += dr; tc += dc;
+                }
+            }
+        };
+
+        if (type === PIECES.PAWN) {
+            tryAdd(r + forward, c - 1);
+            tryAdd(r + forward, c + 1);
+            if (isInsidePalace(r, c)) { tryAdd(r - forward, c - 1); tryAdd(r - forward, c + 1); }
+        } else if (type === PIECES.GUARDIAN) {
+            slide([[0,1], [0,-1], [1,0], [-1,0]]);
+        } else if (type === PIECES.KNIGHT) { // Diagonal
+            slide([[1,1], [1,-1], [-1,1], [-1,-1]]);
+        } else if (type === PIECES.PRINCE) {
+            [[1,1], [1,-1], [-1,1], [-1,-1]].forEach(([dr, dc]) => tryAdd(r+dr, c+dc));
+            [[0,1], [0,-1], [1,0], [-1,0]].forEach(([dr, dc]) => {
+                let r1 = r+dr, c1 = c+dc;
+                if (r1 >= 0 && r1 < ROWS && c1 >= 0 && c1 < COLS) {
+                    const p1 = board[r1][c1];
+                    if (!p1) {
+                        moves.push({ from: {r,c}, to: {r:r1, c:c1}, capture: null });
+                        let r2 = r1+dr, c2 = c1+dc;
+                        if (r2 >= 0 && r2 < ROWS && c2 >= 0 && c2 < COLS) {
+                            const p2 = board[r2][c2];
+                            if (!p2) moves.push({ from: {r,c}, to: {r:r2, c:c2}, capture: null });
+                            else if (p2.color !== color) moves.push({ from: {r,c}, to: {r:r2, c:c2}, capture: p2 });
+                        }
+                    } else if (p1.color !== color) {
+                        moves.push({ from: {r,c}, to: {r:r1, c:c1}, capture: p1 });
+                    }
+                }
+            });
+        } else if (type === PIECES.ARCHER) { // Jump logic
+            const allDirs = [[0,1], [0,-1], [1,0], [-1,0], [1,1], [1,-1], [-1,1], [-1,-1]];
+            for (let [dr, dc] of allDirs) {
+                let tr = r + dr, tc = c + dc;
+                let hurdle = null;
+                while (tr >= 0 && tr < ROWS && tc >= 0 && tc < COLS) {
+                    const cell = board[tr][tc];
+                    if (!hurdle) {
+                        if (cell) hurdle = cell;
+                    } else {
+                        if (hurdle.color === color) { // Friendly hurdle -> Move
+                            if (!cell) moves.push({ from: {r,c}, to: {r:tr, c:tc}, capture: null });
+                            else break;
+                        } else { // Enemy hurdle -> Capture
+                            if (cell) {
+                                if (cell.color !== color) moves.push({ from: {r,c}, to: {r:tr, c:tc}, capture: cell });
+                                break;
+                            }
+                        }
+                    }
+                    tr += dr; tc += dc;
+                }
+            }
+        }
+        return moves;
+    }
+
+    function findKing(col) {
+        for(let r=0; r<ROWS; r++)
+            for(let c=0; c<COLS; c++)
+                if(board[r][c] && board[r][c].type === PIECES.PRINCE && board[r][c].color === col) return {r,c};
+        return null;
+    }
+
+    function inCheck(col) {
+        const k = findKing(col);
+        if (!k) return true;
+        const enemy = col === COLORS.White ? COLORS.Black : COLORS.White;
+        // Reverse check: Can any enemy move to Prince's pos?
+        for(let r=0; r<ROWS; r++) {
+            for(let c=0; c<COLS; c++) {
+                const p = board[r][c];
+                if (p && p.color === enemy) {
+                    if (getPseudoMoves(r, c, p).some(m => m.to.r === k.r && m.to.c === k.c)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function getLegalMoves(col) {
+        const occ = board[THRONE.r][THRONE.c];
+        if (occ && occ.color === col && occ.type !== PIECES.PRINCE) {
+            const pseudos = getPseudoMoves(THRONE.r, THRONE.c, occ);
+            const forced = [];
+            for (let m of pseudos) {
+                if (m.to.r === THRONE.r && m.to.c === THRONE.c) continue;
+                board[m.to.r][m.to.c] = occ; board[m.from.r][m.from.c] = null;
+                if (!inCheck(col)) forced.push(m);
+                board[m.from.r][m.from.c] = occ; board[m.to.r][m.to.c] = m.capture;
+            }
+            return forced;
+        }
+        const legal = [];
+        for(let r=0; r<ROWS; r++) {
+            for(let c=0; c<COLS; c++) {
+                const p = board[r][c];
+                if (p && p.color === col) {
+                    const pseudos = getPseudoMoves(r, c, p);
+                    for (let m of pseudos) {
+                        board[m.to.r][m.to.c] = p; board[m.from.r][m.from.c] = null;
+                        if (!inCheck(col)) legal.push(m);
+                        board[m.from.r][m.from.c] = p; board[m.to.r][m.to.c] = m.capture;
+                    }
+                }
+            }
+        }
+        return legal;
+    }
+
+    // --- AI (Minimax) ---
+    function orderMoves(moves) {
+        return moves.sort((a, b) => {
+            let scoreA = 0, scoreB = 0;
+            if (a.capture) scoreA = (VAL[a.capture.type]*10) - VAL[board[a.from.r][a.from.c].type];
+            if (b.capture) scoreB = (VAL[b.capture.type]*10) - VAL[board[b.from.r][b.from.c].type];
+            if (board[a.from.r][a.from.c].type === PIECES.PRINCE) scoreA += 50; 
+            if (board[b.from.r][b.from.c].type === PIECES.PRINCE) scoreB += 50;
+            return scoreB - scoreA;
+        });
+    }
+
+    function evaluate() {
+        let score = 0;
+        let BlackK = null, WhiteK = null;
+        for(let r=0; r<ROWS; r++) {
+            for(let c=0; c<COLS; c++) {
+                const p = board[r][c];
+                if(!p) continue;
+                let v = VAL[p.type];
+                // Simple Central Bonus
+                if (c >= 3 && c <= 5) v += 10;
+                if (p.type === PIECES.PRINCE) {
+                    if(p.color === COLORS.Black) BlackK = {r,c}; else WhiteK = {r,c};
+                }
+                if (p.color === COLORS.White) score += v; else score -= v;
+            }
+        }
+        // Throne Distance
+        if (WhiteK) {
+            const d = Math.abs(WhiteK.r - THRONE.r) + Math.abs(WhiteK.c - THRONE.c);
+            score -= d * 50; 
+            if (d===0) score += 1000;
+        }
+        if (BlackK) {
+            const d = Math.abs(BlackK.r - THRONE.r) + Math.abs(BlackK.c - THRONE.c);
+            score += d * 50; 
+            if (d===0) score -= 1000;
+        }
+        return score;
+    }
+
+    let nodes = 0;
+    function minimax(depth, alpha, beta, isMax) {
+        nodes++;
+        if (searchDeadline && Date.now() > searchDeadline) return evaluate();
+        const kBlack = findKing(COLORS.Black), kWhite = findKing(COLORS.White);
+        if (kWhite && kWhite.r === THRONE.r && kWhite.c === THRONE.c) return 100000 + depth;
+        if (kBlack && kBlack.r === THRONE.r && kBlack.c === THRONE.c) return -100000 - depth;
+
+        if (depth === 0) return evaluate();
+
+        const color = isMax ? COLORS.White : COLORS.Black;
+        const moves = orderMoves(getLegalMoves(color));
+        if (moves.length === 0) return 0;
+
+        if (isMax) {
+            let maxEval = -Infinity;
+            for (let m of moves) {
+                const p = board[m.from.r][m.from.c], cap = m.capture;
+                board[m.to.r][m.to.c] = p; board[m.from.r][m.from.c] = null;
+                const eval = minimax(depth - 1, alpha, beta, false);
+                board[m.from.r][m.from.c] = p; board[m.to.r][m.to.c] = cap;
+                maxEval = Math.max(maxEval, eval);
+                alpha = Math.max(alpha, eval);
+                if (beta <= alpha) break;
+            }
+            return maxEval;
+        } else {
+            let minEval = Infinity;
+            for (let m of moves) {
+                const p = board[m.from.r][m.from.c], cap = m.capture;
+                board[m.to.r][m.to.c] = p; board[m.from.r][m.from.c] = null;
+                const eval = minimax(depth - 1, alpha, beta, true);
+                board[m.from.r][m.from.c] = p; board[m.to.r][m.to.c] = cap;
+                minEval = Math.min(minEval, eval);
+                beta = Math.min(beta, eval);
+                if (beta <= alpha) break;
+            }
+            return minEval;
+        }
+    }
+
+    function runAI() {
+        if (gameOver) return;
+        if (!matchStarted) return;
+        isAIThinking = true;
+        updateStatusPill();
+
+        setTimeout(() => {
+            const depthMap = { 1: 2, 2: 3, 3: 4, 4: 4, 5: 5 };
+            const depth = depthMap[difficulty] || 4; 
+            if (difficulty === 5) { searchDeadline = Date.now() + 600; }
+            const moves = orderMoves(getLegalMoves(aiColor));
+            let bestMove = null;
+            let bestVal = -Infinity;
+
+            for (let m of moves) {
+                const p = board[m.from.r][m.from.c], cap = m.capture;
+                board[m.to.r][m.to.c] = p; board[m.from.r][m.from.c] = null;
+                
+                // Instant Win
+                if (p.type === PIECES.PRINCE && m.to.r === THRONE.r && m.to.c === THRONE.c) {
+                    bestVal = Infinity; bestMove = m;
+                    board[m.from.r][m.from.c] = p; board[m.to.r][m.to.c] = cap;
+                    break;
+                }
+
+                let eval = minimax(depth - 1, -Infinity, Infinity, false);
+                if (difficulty === 1) eval += (Math.random() * 40 - 20);
+                else if (difficulty === 2) eval += (Math.random() * 20 - 10);
+
+                board[m.from.r][m.from.c] = p; board[m.to.r][m.to.c] = cap;
+
+                if (eval > bestVal) { bestVal = eval; bestMove = m; }
+            }
+
+            if (bestMove) {
+                applyMove(bestMove);
+            } else {
+                gameOver = true;
+                alert(LANG.draw);
+            }
+            isAIThinking = false;
+            searchDeadline = 0;
+            updateStatusPill();
+        }, 50);
+    }
+
+    // --- INTERACTION ---
+    function selectSquare(r, c) {
+        if (gameOver || isAIThinking) return;
+        if (!matchStarted) return;
+        if (gameMode === 'pvc' && turn !== playerColor) return;
+
+        const p = board[r][c];
+        const occ = board[THRONE.r][THRONE.c];
+        if (occ && occ.color === turn && occ.type !== PIECES.PRINCE) {
+            if (!(r === THRONE.r && c === THRONE.c)) return;
+            selectedSq = {r,c};
+            const pseudos = getPseudoMoves(r, c, p).filter(m => !(m.to.r === THRONE.r && m.to.c === THRONE.c));
+            legalMoves = pseudos.filter(m => {
+                board[m.to.r][m.to.c] = p; board[m.from.r][m.from.c] = null;
+                const safe = !inCheck(turn);
+                board[m.from.r][m.from.c] = p; board[m.to.r][m.to.c] = m.capture;
+                return safe;
+            });
+            renderBoard();
+        } else if (p && p.color === turn) {
+            selectedSq = {r,c};
+            const pseudos = getPseudoMoves(r, c, p);
+            legalMoves = pseudos.filter(m => {
+                board[m.to.r][m.to.c] = p; board[m.from.r][m.from.c] = null;
+                const safe = !inCheck(turn);
+                board[m.from.r][m.from.c] = p; board[m.to.r][m.to.c] = m.capture;
+                return safe;
+            });
+            renderBoard();
+        } else {
+            selectedSq = null;
+            legalMoves = [];
+            renderBoard();
+        }
+    }
+
+    function userMove(move) { applyMove(move); }
+
+    function applyMove(move) {
+        const p = board[move.from.r][move.from.c];
+        
+        // Log
+        const coord = (pos) => `${String.fromCharCode(65+pos.c)}${pos.r+1}`;
+        const pName = p.type === PIECES.PRINCE ? 'K' : p.type === PIECES.GUARDIAN ? 'R' : p.type === PIECES.KNIGHT ? 'N' : p.type === PIECES.ARCHER ? 'C' : 'P';
+        const txt = `${turn === aiColor ? 'AI' : 'You'}: ${pName} ${coord(move.from)}->${coord(move.to)}`;
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${turn === COLORS.White ? 'ai' : 'player'}`;
+        entry.innerHTML = `<span>${txt}</span>`;
+        historyEl.prepend(entry);
+
+        // Save State
+        history.push({
+            board: board.map(r => r.map(c => c ? {...c} : null)),
+            turn: turn,
+            lastMove: lastMove
+        });
+
+        board[move.to.r][move.to.c] = p;
+        board[move.from.r][move.from.c] = null;
+        lastMove = move;
+        selectedSq = null;
+        legalMoves = [];
+
+        // Win Check
+        if (p.type === PIECES.PRINCE && move.to.r === THRONE.r && move.to.c === THRONE.c) {
+            const winner = (turn === COLORS.White)
+                ? (turn === aiColor ? 'White (AI)' : 'White (You)')
+                : (turn === aiColor ? 'Black (AI)' : 'Black (You)');
+            gameOver = true;
+            stopTimer();
+            const times = `White ${formatTime(WhiteTime)} | Black ${formatTime(BlackTime)}`;
+            notifEl.innerText = `${winner} ${LANG.win} • ${times}`;
+            notifEl.classList.add('show');
+            renderBoard();
+            return;
+        }
+
+        const nextTurn = turn === COLORS.White ? COLORS.Black : COLORS.White;
+        if (inCheck(nextTurn)) {
+            notifEl.innerText = LANG.check;
+            notifEl.classList.add('show');
+            setTimeout(() => notifEl.classList.remove('show'), 1500);
+        }
+
+        turn = nextTurn;
+        renderBoard();
+        updateStatusPill();
+        if (!gameOver && gameMode === 'pvc' && turn === aiColor) { runAI(); }
+    }
+
+    function uiUndo() {
+        if (isAIThinking || history.length === 0) return;
+        let steps = gameMode === 'pvc' ? 2 : 1;
+        if (history.length < steps) steps = history.length;
+        const state = history[history.length - steps];
+        board = state.board;
+        turn = state.turn;
+        lastMove = state.lastMove;
+        history = history.slice(0, history.length - steps);
+        gameOver = false;
+        notifEl.classList.remove('show');
+        renderBoard();
+        updateStatusPill();
+    }
+
+    let timerId = null;
+    let WhiteTime = 0;
+    let BlackTime = 0;
+    let timeLimitEnabled = false;
+    let timeLimitSeconds = 0;
+    function formatTime(s) {
+        const m = Math.floor(s/60).toString().padStart(2,'0');
+        const ss = (s%60).toString().padStart(2,'0');
+        return `${m}:${ss}`;
+    }
+    function updateTimersUI() {
+        WhiteTimerEl.innerText = formatTime(WhiteTime);
+        BlackTimerEl.innerText = formatTime(BlackTime);
+    }
+    function stopTimer() { if (timerId) { clearInterval(timerId); timerId = null; } }
+    function startTurnTimer() {
+        stopTimer();
+        if (gameOver) return;
+        if (timeLimitEnabled) {
+            timerId = setInterval(() => {
+                if (turn === COLORS.White) { if (WhiteTime > 0) WhiteTime--; } else { if (BlackTime > 0) BlackTime--; }
+                updateTimersUI();
+                if ((turn === COLORS.White && WhiteTime <= 0) || (turn === COLORS.Black && BlackTime <= 0)) {
+                    WhiteTime = Math.max(0, WhiteTime);
+                    BlackTime = Math.max(0, BlackTime);
+                    gameOver = true;
+                    stopTimer();
+                    const winnerCol = turn === COLORS.White ? COLORS.Black : COLORS.White;
+                    const winner = (winnerCol === COLORS.White)
+                        ? (winnerCol === aiColor ? 'White (AI)' : 'White (You)')
+                        : (winnerCol === aiColor ? 'Black (AI)' : 'Black (You)');
+                    const times = `White ${formatTime(WhiteTime)} | Black ${formatTime(BlackTime)}`;
+                    notifEl.innerText = `${winner} ${LANG.winsOnTime} • ${times}`;
+                    notifEl.classList.add('show');
+                    renderBoard();
+                }
+            }, 1000);
+            return;
+        }
+        if (gameMode === 'pvc') {
+            if (turn === playerColor && !isAIThinking) {
+                if (playerColor === COLORS.White) timerId = setInterval(() => { WhiteTime++; updateTimersUI(); }, 1000);
+                else timerId = setInterval(() => { BlackTime++; updateTimersUI(); }, 1000);
+            }
+            return;
+        }
+        timerId = setInterval(() => {
+            if (turn === COLORS.White) { WhiteTime++; } else { BlackTime++; }
+            updateTimersUI();
+        }, 1000);
+    }
+
+    // Initial Setup
+    updateText();
+    startGame();
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js');
+    }
+
+</script>
+</body>
+</html>
